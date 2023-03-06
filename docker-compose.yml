@@ -1,0 +1,138 @@
+version: '3'
+services:
+  
+  #PHP Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: digitalocean.com/php
+    container_name: app
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: app
+      SERVICE_TAGS: dev
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+      - ./php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - app-network
+
+  #Nginx Service
+  webserver:
+    image: nginx:alpine
+    container_name: webserver
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./:/var/www
+      - ./nginx/conf.d/:/etc/nginx/conf.d/
+    networks:
+      - app-network
+
+  #MySQL Service
+  db:
+    image: mysql:8
+    container_name: db
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: laravel
+      MYSQL_ROOT_PASSWORD: 123456
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    volumes:
+      - dbdata:/var/lib/mysql/
+      - ./mysql/my.cnf:/etc/mysql/my.cnf
+    networks:
+      - app-network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    ports:
+        - "8081:80"
+    restart: unless-stopped
+    tty: true    
+    volumes:
+         - ./php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - app-network
+
+  sonarqube:
+    image: sonarqube:8.2-community
+    depends_on:
+      - pg
+    ports:
+      - "9091:9000"
+    restart: unless-stopped
+    tty: true    
+    networks:
+      - app-network
+    environment:
+      - sonar.jdbc.url=jdbc:postgresql://pg:5432/sonarqube
+      - sonar.jdbc.username=sonar
+      - sonar.jdbc.password=sonar
+    volumes:
+      - sonarqube_conf:/opt/sonarqube/conf
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_bundled-plugins:/opt/sonarqube/lib/bundled-plugins
+  pg:
+    image: postgres
+    ports:
+        - "5432:5432"
+    restart: unless-stopped
+    tty: true    
+    networks:
+      - app-network
+    environment:
+      - POSTGRES_USER=sonar
+      - POSTGRES_PASSWORD=sonar
+      - POSTGRES_DB=sonarqube
+    volumes:
+      - postgresql:/var/lib/postgresql
+      - postgresql_data:/var/lib/postgresql/data
+
+  jenkins:
+    image: jenkins/jenkins:alpine
+    build:
+      context: .
+      dockerfile: Dockerfile2
+    privileged: true
+    user: root
+    ports:
+      - "50000:50000"
+      - "8080:8080"
+    container_name: jenkins-local
+    volumes:
+      - jenkins_data:/var/jenkins_home
+      - docker_sock:/var/run/docker.sock
+      - jenkins-docker-certs:/certs/client
+    environment:
+      - "JENKINS_OPTS=--prefix=/jenkins"
+      - "DOCKER_TLS_CERTDIR=/certs"
+    networks:
+      - app-network  
+
+
+#Docker Networks
+networks:
+  app-network:
+    driver: bridge
+#Volumes
+volumes:
+  dbdata:
+    driver: local
+  sonarqube_conf: {}
+  sonarqube_data: {}
+  sonarqube_extensions: {}
+  sonarqube_bundled-plugins: {}
+  postgresql: {}
+  postgresql_data: {}
